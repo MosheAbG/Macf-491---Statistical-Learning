@@ -1,0 +1,147 @@
+##Question 2
+
+library(ISLR)
+
+
+
+SSE = rep(0,5) # Initialize SSE which contains one value for each validation set
+for(i in 1:5){
+  ValidateVec = Credit[((1 + 80*i - 80): (80 *i)),]
+  TrainVec = Credit[-((1 + 80*i - 80): (80 *i)),]
+  #Create Regression formula
+  Regression = lm(formula = Balance ~ ID + Income + Limit + Rating + Cards + Age 
+                  + Education+ Gender + Student + Married + Ethnicity, data =  TrainVec)
+  RegressionValues = predict(object = Regression, newdata = ValidateVec) # Predict new values based on validation data
+  
+  SSE[i] = sum((ValidateVec$Balance - RegressionValues)^2) #Calculate SSE
+  
+}
+RMSE = sqrt(sum(SSE)/nrow(Credit))
+RMSE
+
+
+
+###PART b ####
+
+# Check which predictors are relevant
+summary(lm(formula =Balance ~ Income + Limit + Rating + Cards + Age + Education + Gender + Student + Married + Ethnicity, data = Credit))
+## (Intercept), Income, Limit, Rating, Cards, Age, Student are significant at 5% level
+
+# Repeat same process as in a but for less predictors
+SSE = rep(0,5)
+for(i in 1:5){
+  ValidateVec = Credit[((1 + 80*i - 80): (80 *i)),]
+  TrainVec = Credit[-((1 + 80*i - 80): (80 *i)),]
+  Regression = lm(formula = Balance ~ Income + Limit + Rating + Cards + Age +
+                  Student, data =  TrainVec)
+  RegressionValues = predict(object = Regression, newdata = ValidateVec)
+  
+  SSE[i] = sum((ValidateVec$Balance - RegressionValues)^2)
+  
+}
+RMSE = sqrt(sum(SSE)/nrow(Credit))
+RMSE
+
+
+
+
+
+####PART c ####
+library(leaps)
+# Perform Forward varaible selection to minimize BIC
+ForwardBIC = regsubsets(data = Credit, x = Balance ~ ID + Income + Limit + Rating + Cards + Age 
+           + Education+ Gender + Student + Married + Ethnicity,  nvmax = 12, method = "forward" )
+SummaryForwardBIC = summary(ForwardBIC)
+OptimalBIC = which.min(SummaryForwardBIC$bic)  ## 5 Parameters
+coef(ForwardBIC, OptimalBIC) #Income, Limit, Rating, Cards, StudentYes
+
+#Perform Exhaustive variable selection to minimize BIC
+ExhaustiveBIC = regsubsets(data = Credit, x = Balance ~ ID + Income + Limit + Rating + Cards + Age 
+                        + Education+ Gender + Student + Married + Ethnicity,  nvmax = 12, method = "exhaustive" )
+SummaryExhaustiveBIC = summary(ExhaustiveBIC)
+OptimalBIC = which.min(SummaryExhaustiveBIC$bic)  ## 4 Parameters
+coef(ExhaustiveBIC, OptimalBIC) #Income, Limit, Cards, StudentYes
+
+min(SummaryExhaustiveBIC$bic) ## -1198.053
+min(SummaryForwardBIC$bic) ## -1197.096
+#Exhaustive approach has smaller BIC
+
+
+
+
+
+#### PART d ####
+library(glmnet)
+# Initialize grid
+lambdagrid <- 10^seq(10, -2, length = 100)
+# this is how data variable are defined for glmnet
+x = model.matrix(Balance~., Credit)
+y = Credit$Balance
+SSERidge = matrix(0,nrow = 5, ncol = 100)
+
+for(i in 1:5){
+  for(j in 1:100){
+
+# Set up variables same way as in part b
+ValidateX = x[((1 + 80*i - 80): (80 *i)),]
+TrainX = x[-((1 + 80*i - 80): (80 *i)),]
+
+ValidateY = y[((1 + 80*i - 80): (80 *i))]
+TrainY = y[-((1 + 80*i - 80): (80 *i))]
+
+ridge.mod = glmnet(TrainX, TrainY, alpha = 0, lambda = lambdagrid) # alpha = 0 for ridge
+#range starts at 10^10 and evenly works its way to 10^-2
+RidgePred = predict(object = ridge.mod,s = 10^(10 -(12 *(j - 1) /99)), newx = ValidateX)
+SSERidge[i,j] = sum((RidgePred - ValidateY)^2)
+
+}
+}
+RMSERidge = sqrt(colSums(SSERidge/nrow(x))) ## Sum columns of SSE then take square root
+#the optimal lambda is where on the grid the RMSE is smallest and subtract one from the index since max value is 10^10
+OptimalLambdaRidge = 10^(10 -(12/99)*(which.min(RMSERidge)-1)) 
+OptimalLambdaRidge## 0.4977
+min(RMSERidge) ###100.6921
+
+
+
+#### Part e ######
+
+# Initialize grid
+lambdagrid <- 10^seq(10, -2, length = 100)
+# this is how data variable are defined for glmnet
+x = model.matrix(Balance~., Credit)
+y = Credit$Balance
+SSELasso = matrix(0,nrow = 5, ncol = 100)
+
+for(i in 1:5){
+  for(j in 1:100){
+    
+    # Set up variables same way as in part b
+    ValidateX = x[((1 + 80*i - 80): (80 *i)),]
+    TrainX = x[-((1 + 80*i - 80): (80 *i)),]
+    
+    ValidateY = y[((1 + 80*i - 80): (80 *i))]
+    TrainY = y[-((1 + 80*i - 80): (80 *i))]
+    
+    lasso.mod = glmnet(TrainX, TrainY, alpha = 1, lambda = lambdagrid) # alpha = 1 for lasso
+    #range starts at 10^10 and evenly works its way to 10^-2
+    #minimizing MSE across the whole grid, trying every value on the grid
+    LassoPred = predict(object = lasso.mod,s = 10^(10 -(12 *(j - 1) /99)), newx = ValidateX)
+    SSELasso[i,j] = sum((LassoPred - ValidateY)^2)
+    
+  }
+}
+RMSELasso = sqrt(colSums(SSELasso/nrow(x))) ## Sum columns of SSE then take square root
+#the optimal lambda is where on the grid the RMSE is smallest and subtract one from the index since max value is 10^10
+OptimalLambdaLasso = 10^(10 -(12/99)*(which.min(RMSELasso)-1)) 
+OptimalLambdaLasso## 0.2848
+min(RMSELasso) ###100.7563
+
+
+
+## f ##
+## Optimal model is the 1 in part b
+## to obtain the coefficient on those 6 parameters just apply coef()
+
+
+coef(lm(Balance ~ Income + Limit + Rating + Cards + Age + Student, data = Credit))
