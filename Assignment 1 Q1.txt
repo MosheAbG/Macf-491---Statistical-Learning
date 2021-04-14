@@ -1,0 +1,116 @@
+##Question 1
+##(a)
+LoadData <- load("C:/Users/dpesl/Downloads/Loaddata.RData")
+View(Loadseries)
+View(Weekseries)
+
+
+##(b)
+##for verification purposes, Csn & Ccs also set up outside Designmatrixfunction
+Csn <- function(j,t) (sin(((3*pi)/2)+((2*pi*j*t)/(365.25/7))))
+Ccs <- function(j,t) (cos(((3*pi)/2)+((2*pi*j*t)/(365.25/7))))
+
+##Note n the array of points in time t
+##Design matrix for length(n)x((2*p) +1) matrix
+Designmatrixfunction <- function(n, p){
+  Csn <- function(j,t) (sin(((3*pi)/2)+((2*pi*j*t)/(365.25/7))))
+  Ccs <- function(j,t) (cos(((3*pi)/2)+((2*pi*j*t)/(365.25/7))))
+  factors <- c()
+  for (j in 1:p){
+    for (i in n){
+      factors <- c(factors, Csn(j,i))
+    }
+    for (i in n){
+      factors <- c(factors, Ccs(j,i))
+    }
+  }
+  Designmatrix <- matrix(c((rep(1,length(n))), factors), ncol=(1+(2*p)))
+  Designmatrix
+}
+
+##(c)
+
+OLSSSE <- function(yTrain, XdesignTrain, XdesignValid, yValid) {
+  beta <- (solve(t(XdesignTrain)%*%XdesignTrain))%*%t(XdesignTrain)%*%yTrain
+  SSE <- sum((yValid - t(beta)%*%t(XdesignValid))^2)
+  SSE
+}
+
+##(d)
+
+SSEmat = matrix(nrow = 5, ncol = 6) # Initialize SSE matrix
+
+p = 5 ## 5 possible p values
+## Divide the data up by year
+Data2007 = 1:53
+Data2008 = 54:105
+Data2009 = 106:157
+Data2010 = 158:209
+Data2011 = 210:261
+Data2012 = 262:291
+
+for(j in 1:6){ ## Looping over the data by year
+  for(i in 1:p){ ## Looping over the p's
+    # Predict values for the validation set, by training on the other 5 years
+    # Fill up the SSE matrix for all 3o different validation combinations
+    if(j == 1){
+    SSEmat[i,j] = OLSSSE(Loadseries[-(Data2007)], Designmatrixfunction(53:290,i), Designmatrixfunction(0:52,i), Loadseries[Data2007])
+    }
+    if(j == 2){
+      SSEmat[i,j] = OLSSSE(Loadseries[-(Data2008)], Designmatrixfunction(c(0:52, 105:290),i), Designmatrixfunction(53:104,i), Loadseries[Data2008])
+    }
+    if(j == 3){
+      SSEmat[i,j] = OLSSSE(Loadseries[-(Data2009)], Designmatrixfunction(c(0:104, 157:290),i), Designmatrixfunction(105:156,i), Loadseries[Data2009])
+    } 
+    if(j == 4){
+      SSEmat[i,j] = OLSSSE(Loadseries[-(Data2010)], Designmatrixfunction(c(0:156, 209:290),i), Designmatrixfunction(157:208,i), Loadseries[Data2010])
+    }
+    if(j == 5){
+      SSEmat[i,j] = OLSSSE(Loadseries[-(Data2011)], Designmatrixfunction(c(0:208, 261:290),i), Designmatrixfunction(209:260,i), Loadseries[Data2011])
+    }
+    if(j == 6){
+      SSEmat[i,j] = OLSSSE(Loadseries[-(Data2012)], Designmatrixfunction(c(0:260),i), Designmatrixfunction(261:290,i), Loadseries[Data2012])
+    }
+    
+    
+  }
+}
+
+
+# Sum the rows to get the SSE for each value of p
+SSEtot = rowSums(SSEmat)
+SSEtot
+OptimalP = which.min(SSEtot)
+OptimalP #4 is optimal
+
+
+##(e)
+
+# Using p = 4 and solving for optimal betas
+OptPreds = (solve(t(Designmatrixfunction(0:290,4))%*%(Designmatrixfunction(0:290,4))))%*%t(Designmatrixfunction(0:290,4))%*%Loadseries
+OptPreds
+
+# Use new betas to make model predictions
+OptValues = Designmatrixfunction(0:290,4) %*% OptPreds
+#OptValues
+
+# Graph of model vs actual values
+
+plot(x = c(0:290), y = OptValues, type = "l", main = "Load Values VS Weeks", xlab = "weeks", ylab = "Load Series Values",
+     xlim = c(0,300), ylim = c(4000000, 7600000),col = "blue") 
+lines(x = c(0:290), y = Loadseries, col = "black")
+legend("topleft", 
+       c("True Values", "Predicted Values"), 
+       fill = c("black", "blue"))
+
+##(f)
+
+t = 293 ## Since index start from 0
+PredictorValues = 1 # since first column is just all 1's
+for ( i in 1:4) {
+  PredictorValues = append(PredictorValues, sin(3*pi/2 + 2*pi*i*t/(365.25/7))) ## Add new values to old values
+  PredictorValues = append(PredictorValues, cos(3*pi/2 + 2*pi*i*t/(365.25/7)))
+}
+
+AugustValue = PredictorValues%*% OptPreds
+AugustValue
