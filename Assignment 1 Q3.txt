@@ -1,0 +1,200 @@
+##Question 3
+
+load("C:/Users/dpesl/Downloads/IV.RData")
+
+##(a)
+
+
+dmvn <- function(xmat, muvec, Sigmamat){
+  pdfvec<-c()
+  for (i in 1:(length(xmat[,1]))){
+    pdfvec1 <- exp(-0.5 * t(xmat[i,] - muvec) %*% solve(Sigmamat) %*% (xmat[i,] - muvec))/(((2*pi)^(length(xmat[1,])/2))*(det(Sigmamat)^(1/2)))
+    pdfvec <- c(pdfvec, pdfvec1)
+  }
+  return(pdfvec)
+}
+
+
+##(b)
+
+##NOTES!!
+##xmat = actual values for Maturity & Strike
+##muvec = gridMaturity & gridStrike
+##Sigmamat's are given
+##calculate weights with dmvn (and normalize to weights) for selected point in gridStrikexgridMaturity
+##then calculate beta hat for selected point
+##then store into fhatmatlist (not created yet)
+##!! Repeat for the different values of Sigmamat (or iteration ??)
+##Note 192 weights per data point of xmatrix(gridStrike&gridMaturity combination)
+
+xmatrix <- matrix(c(Maturity, Strike), nrow = 192)
+
+xmatrixB0<-matrix(c(rep(1,192),Maturity, Strike), nrow = 192)
+#xmatrixB0 has a column of 1s to more easily solve for B0
+ymatrix <- matrix(ImplicitVol, nrow = 192)
+
+gridMaturity <- seq(0, 1, by = 0.05)
+gridStrike <- seq(850, 1150, by = 20)
+muvector <- data.matrix(expand.grid(gridMaturity, gridStrike))
+muvectorB0<-cbind(rep(1,336),muvector)
+
+
+sigmamatrix1 <- matrix(c(0.3, 0, 0, 100), nrow = 2)
+sigmamatrix1
+sigmamatrix2 <- matrix(c(0.1, 0, 0, 25), nrow = 2)
+sigmamatrix2
+sigmamatrix3 <- matrix(c(0.9, 0, 0, 200), nrow = 2)
+sigmamatrix3
+
+weight1<-matrix(nrow=192,ncol=336)
+weight2<-weight1
+weight3<-weight1
+
+
+for(k in  1:length(muvector[,1])){
+  weightI<-dmvn(xmatrix,muvector[k,],sigmamatrix1)/sum(dmvn(xmatrix,muvector[k,],sigmamatrix1))
+  weight1[,k]<-weightI
+}
+
+for(k in  1:length(muvector[,1])){
+  weightI<-dmvn(xmatrix,muvector[k,],sigmamatrix2)/sum(dmvn(xmatrix,muvector[k,],sigmamatrix1))
+  weight2[,k]<-weightI
+}
+for(k in  1:length(muvector[,1])){
+  weightI<-dmvn(xmatrix,muvector[k,],sigmamatrix3)/sum(dmvn(xmatrix,muvector[k,],sigmamatrix1))
+  weight3[,k]<-weightI
+}
+
+
+#every column (i) of the weightJ matrix has the weights for all 192 data points of the ith combination in muvector(of the Jth sigmamatrix)
+
+
+#for each pair of maturity and strike(336 pairs) we have a differently weighted local linear regression each with a B0 B1 and B2
+#each vector B=(B0,B1,B2) is found by B=(xT*Wd*X)^-1*(xT*Wd*y)
+#where Wd is a 192x192 diagonal matrix with the weights of each x
+betahat<-matrix(rep(0, 1008), nrow = 3)
+fhatmatlist<-rep(0,3)
+ypred1<-rep(0,336)
+ypred2<-ypred1
+ypred3<-ypred1
+
+for(l in 1:336){
+  diagowmat<-diag(weight1[,l])
+  betahat[,l]<-solve(t(xmatrixB0) %*% diagowmat %*% xmatrixB0) %*% t(xmatrixB0) %*% diagowmat %*% ymatrix
+}
+
+for(i in 1:336){
+  ypred1[i]<-muvectorB0[i,] %*%betahat[,i]
+}
+
+fhatmat1<-matrix(ypred1,nrow=21,byrow=FALSE)
+
+#we have created the 1st entry of fhatmatlist, now we repeat the process for the 2nd and 3rd prediction matrices
+
+for(l in 1:336){
+  diagowmat<-diag(weight2[,l])
+  betahat[,l]<-solve(t(xmatrixB0) %*% diagowmat %*% xmatrixB0) %*% t(xmatrixB0) %*% diagowmat %*% ymatrix
+}
+
+
+for(i in 1:336){
+  ypred2[i]<-muvectorB0[i,] %*%betahat[,i]
+}
+
+fhatmat2<-matrix(ypred2,nrow=21,byrow=FALSE)
+
+#for 3rd sigma:
+for(l in 1:336){
+  diagowmat<-diag(weight3[,l])
+  betahat[,l]<-solve(t(xmatrixB0) %*% diagowmat %*% xmatrixB0) %*% t(xmatrixB0) %*% diagowmat %*% ymatrix
+}
+
+
+for(i in 1:336){
+  ypred2[i]<-muvectorB0[i,] %*%betahat[,i]
+}
+
+fhatmat3<-matrix(ypred2,nrow=21,byrow=FALSE)
+
+fhatmatlist<-list(fhatmat1,fhatmat2,fhatmat3)
+
+
+
+
+
+
+
+##NOTE !!
+##When using list(), to recall elements
+##must use fhatmatlist[[#]] with # of element in list
+
+##(c)
+
+#We commented out the install package line after installing it once
+#install.packages("plot3D")
+library(plot3D)
+
+M <- mesh(gridStrike,gridMaturity)
+
+par(mfrow=c(2,2), oma = c(1, 0, 0, 1) + 0.1, mar = c(2, 0, 1, 1) + 0.3)
+surf3D(x = t(M$x), y = t(M$y), z = fhatmatlist[[1]], xlab = 'Strike', ylab = 'Maturity',
+       zlab = 'Implied Volatility Prediction', theta = 40, bty = 'b2')
+surf3D(x = t(M$x), y = t(M$y), z = fhatmatlist[[2]], xlab = 'Strike', ylab = 'Maturity',
+       zlab = 'Implied Volatility Prediction', theta = 40, bty = 'b2')
+surf3D(x = t(M$x), y = t(M$y), z = fhatmatlist[[3]], xlab = 'Strike', ylab = 'Maturity',
+       zlab = 'Implied Volatility Prediction', theta = 40, bty = 'b2')
+scatter3D(x = Strike, y = Maturity, z = ImplicitVol, xlab = 'Strike', ylab = 'Maturity',
+          zlab = 'Implied Volatility', theta = 40, bty = 'b2')
+
+##(d)
+
+
+
+PredictNearestNeighbors <- function(yval, xval, xpred, NNnumber){
+  NNpreds <- rep(0, length(xpred)/2)
+  indexNN <- rep(0, NNnumber)
+  for (h in 1:(length(xpred)/2)) {
+    #IndexNN stores the positions of the k nearest neighbours 
+    indexNN <- (order(sqrt((xval[,1] - xpred[h,1])^2 + (xval[,2] - xpred[h,2])^2)))[1:NNnumber]
+    NNpreds[h] <<- mean(yval[indexNN])
+  }
+}
+
+
+
+##(e)
+
+##create matrix with Strike column divided by 400
+xmatrixmod <- xmatrix[,2]/400
+xmatrixmod
+xmatrixe <- matrix(c(xmatrix[,1], xmatrixmod), nrow = 192)
+gridStrikeE<-gridStrike/400
+muVectorE<-data.matrix(expand.grid(gridMaturity, gridStrikeE))
+
+NNpreds <- rep(0, length(xmatrixe[,1]))
+
+PredictNearestNeighbors(ymatrix, xmatrixe, muVectorE, 5)
+NNpred1 <- matrix(NNpreds, ncol =  16, byrow = FALSE)
+
+PredictNearestNeighbors(ymatrix, xmatrixe, muVectorE, 15)
+NNpred2 <- matrix(NNpreds, ncol = 16, byrow = FALSE)
+
+PredictNearestNeighbors(ymatrix, xmatrixe, muVectorE, 30)
+NNpred3 <- matrix(NNpreds, ncol = 16, byrow = FALSE)
+
+fhatmatlistKNN <- list(NNpred1, NNpred2, NNpred3)
+
+##f
+
+
+M <- mesh(gridStrike/400, gridMaturity)
+
+par(mfrow=c(2,2), oma = c(1, 0, 0, 1) + 0.1, mar = c(2, 0, 1, 1) + 0.3)
+surf3D(x = t(M$x), y = t(M$y), z = fhatmatlistKNN[[1]], xlab = 'Strike', ylab = 'Maturity',
+       zlab = 'Implied Volatility Prediction', theta = 40, bty = 'b2')
+surf3D(x = t(M$x), y = t(M$y), z = fhatmatlistKNN[[2]], xlab = 'Strike', ylab = 'Maturity',
+       zlab = 'Implied Volatility Prediction', theta = 40, bty = 'b2')
+surf3D(x = t(M$x), y = t(M$y), z = fhatmatlistKNN[[3]], xlab = 'Strike', ylab = 'Maturity',
+       zlab = 'Implied Volatility Prediction', theta = 40, bty = 'b2')
+scatter3D(x = Strike, y = Maturity, z = ImplicitVol, xlab = 'Strike', ylab = 'Maturity',
+          zlab = 'Implied Volatility', theta = 40, bty = 'b2')
